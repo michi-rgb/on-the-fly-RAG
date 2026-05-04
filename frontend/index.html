@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>On-the-fly RAG System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            display: flex;
+            min-height: 600px;
+        }
+        
+        .left-panel {
+            flex: 1;
+            padding: 30px;
+            border-right: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .right-panel {
+            flex: 1.2;
+            padding: 30px;
+            background: #f8f9fa;
+            overflow-y: auto;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .status.online {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.offline {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .upload-section {
+            margin-bottom: 30px;
+        }
+        
+        .upload-label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        
+        .upload-box {
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background: #f0f4ff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-box:hover {
+            border-color: #764ba2;
+            background: #e8ecff;
+        }
+        
+        .upload-box.dragover {
+            border-color: #764ba2;
+            background: #e8ecff;
+            transform: scale(1.02);
+        }
+        
+        .upload-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .upload-text {
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .upload-subtext {
+            color: #999;
+            font-size: 12px;
+        }
+        
+        #pdf-input {
+            display: none;
+        }
+        
+        .file-info {
+            background: #f0f4ff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+            font-size: 13px;
+            color: #333;
+        }
+        
+        .file-info.show {
+            display: block;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .query-section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        
+        .query-label {
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        
+        .query-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        textarea {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            min-height: 80px;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            align-self: flex-start;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response-section h2 {
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .answer-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .source-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #28a745;
+        }
+        
+        .source-header {
+            color: #28a745;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        
+        .source-text {
+            color: #555;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #f5c6cb;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .top-k-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+        
+        .top-k-control label {
+            color: #666;
+        }
+        
+        .top-k-control input {
+            width: 50px;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        /* Make chunk-size-control look same as top-k-control */
+        .chunk-size-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+        .chunk-size-control label {
+            color: #666;
+        }
+        .chunk-size-control input {
+            width: 50px;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .left-panel {
+                border-right: none;
+                border-bottom: 1px solid #eee;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: Upload & Input -->
+        <div class="left-panel">
+            <h1>📄 On-the-fly RAG</h1>
+            <p class="subtitle">PDFファイルから情報を検索・抽出</p>
+            
+            <div id="status" class="status offline">
+                <span id="status-text">Ollamaに接続中...</span>
+            </div>
+            
+            <!-- PDF Upload -->
+            <div class="upload-section">
+                <label class="upload-label">1. PDFファイルをアップロード</label>
+                <div class="upload-box" id="upload-box">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">ファイルをドラッグ&ドロップ</div>
+                    <div class="upload-subtext">または、クリックして選択</div>
+                </div>
+                <input type="file" id="pdf-input" accept=".pdf" />
+                <div id="file-info" class="file-info">
+                    <div>✓ ファイル: <span class="file-name" id="file-name"></span></div>
+                    <div id="chunk-info"></div>
+                </div>
+            </div>
+            
+            <!-- Query Input -->
+            <div class="query-section">
+                <label class="upload-label">2. 質問を入力</label>
+                
+                <div class="top-k-control">
+                    <label for="top-k">取得チャンク数:</label>
+                    <input type="number" id="top-k" min="1" max="10" value="3" />
+                </div>
+                <div class="chunk-size-control">
+                    <label for="chunk-tokens">チャンク長さ（トークン数）:</label>
+                    <input type="number" id="chunk-tokens" min="50" max="5000" value="100" />
+                </div>
+                <div style="color: #666; font-size: 13px; margin-bottom: 10px;">
+                    添付ファイルから抽出したい項目をカンマ区切りで入力してください。<br>
+                    例1(SDS): 製品名,組成、成分情報,適用法令,SDS改訂日<br>
+                    例2(特許): 請求項１,発明が解決しようとする課題,課題を解決するための手段,発明の効果
+                </div>
+                <textarea id="query-input" placeholder="カンマ区切りで入力してください" disabled></textarea>
+                
+                <button class="btn btn-primary" id="query-btn" disabled>質問する</button>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Response -->
+        <div class="right-panel">
+            <div class="response-section">
+                <h2>📝 回答</h2>
+                
+                <div id="error-message" class="error-message"></div>
+                
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>処理中...</p>
+                </div>
+                
+                <div id="response-content" style="display: none;">
+                    <div id="items-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const uploadBox = document.getElementById('upload-box');
+        const pdfInput = document.getElementById('pdf-input');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const chunkInfo = document.getElementById('chunk-info');
+        const queryInput = document.getElementById('query-input');
+        const queryBtn = document.getElementById('query-btn');
+        const topKInput = document.getElementById('top-k');
+        const chunkTokensInput = document.getElementById('chunk-tokens');
+        const statusDiv = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+        const errorMessage = document.getElementById('error-message');
+        const loading = document.getElementById('loading');
+        const responseContent = document.getElementById('response-content');
+        const itemsContainer = document.getElementById('items-container');
+        
+        let pdfUploaded = false;
+        
+        // Check Ollama status on load
+        async function checkOllamaStatus() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                if (data.ollama_available) {
+                    statusDiv.className = 'status online';
+                    statusText.textContent = '✓ Ollamaが稼働中です';
+                } else {
+                    statusDiv.className = 'status offline';
+                    statusText.textContent = '✗ Ollamaに接続できません (localhost:11434)';
+                }
+            } catch (error) {
+                statusDiv.className = 'status offline';
+                statusText.textContent = '✗ Ollamaに接続できません (localhost:11434)';
+            }
+        }
+        
+        // Upload handling
+        uploadBox.addEventListener('click', () => {
+            pdfInput.click();
+        });
+        
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('dragover');
+        });
+        
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('dragover');
+        });
+        
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handlePdfUpload(files[0]);
+            }
+        });
+        
+        pdfInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handlePdfUpload(e.target.files[0]);
+            }
+        });
+        
+        async function handlePdfUpload(file) {
+            if (!file.name.endsWith('.pdf')) {
+                showError('PDFファイルのみサポートしています');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            if (chunkTokensInput && chunkTokensInput.value) {
+                formData.append('chunk_tokens', String(chunkTokensInput.value));
+            }
+            
+            loading.classList.add('show');
+            responseContent.style.display = 'none';
+            errorMessage.classList.remove('show');
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    fileName.textContent = data.filename;
+                    chunkInfo.innerHTML = `<div>チャンク数: ${data.chunks_created}</div>`;
+                    fileInfo.classList.add('show');
+                    
+                    pdfUploaded = true;
+                    queryInput.disabled = false;
+                    queryBtn.disabled = false;
+                    
+                    responseContent.style.display = 'block';
+                    itemsContainer.innerHTML = '<p>PDFアップロード完了。質問してください。</p>';
+                } else {
+                    showError(data.detail || 'アップロード失敗');
+                }
+            } catch (error) {
+                showError('アップロードエラー: ' + error.message);
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+        
+        queryBtn.addEventListener('click', async () => {
+            const query = queryInput.value.trim();
+            
+            if (!query) {
+                showError('質問を入力してください');
+                return;
+            }
+            
+            if (!pdfUploaded) {
+                showError('PDFをアップロードしてください');
+                return;
+            }
+            
+            const topK = parseInt(topKInput.value);
+            
+            loading.classList.add('show');
+            errorMessage.classList.remove('show');
+            
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        top_k: topK
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    itemsContainer.innerHTML = '';
+                    
+                    // Display each item with its answer and sources
+                    data.items.forEach((itemResult, itemIndex) => {
+                        const itemDiv = document.createElement('div');
+                        
+                        // Item header
+                        const itemHeader = document.createElement('h3');
+                        itemHeader.style.marginTop = itemIndex === 0 ? '0' : '30px';
+                        itemHeader.style.color = '#333';
+                        itemHeader.style.fontSize = '16px';
+                        itemHeader.style.paddingBottom = '10px';
+                        itemHeader.style.borderBottom = '2px solid #667eea';
+                        itemHeader.style.marginBottom = '15px';
+                        itemHeader.innerHTML = `📋 ${itemResult.item}`;
+                        itemDiv.appendChild(itemHeader);
+                        
+                        // Answer box
+                        const answerBox = document.createElement('div');
+                        answerBox.className = 'answer-box';
+                        answerBox.innerHTML = `<p>${itemResult.answer.replace(/\n/g, '<br>')}</p>`;
+                        itemDiv.appendChild(answerBox);
+                        
+                        // Sources header
+                        const sourcesHeader = document.createElement('h4');
+                        sourcesHeader.style.color = '#333';
+                        sourcesHeader.style.fontSize = '14px';
+                        sourcesHeader.style.marginTop = '15px';
+                        sourcesHeader.style.marginBottom = '10px';
+                        sourcesHeader.innerHTML = '📌 引用元';
+                        itemDiv.appendChild(sourcesHeader);
+                        
+                        // Sources
+                        itemResult.sources.forEach((source) => {
+                            const sourceBox = document.createElement('div');
+                            sourceBox.className = 'source-box';
+                            sourceBox.innerHTML = `
+                                <div class="source-header">ページ ${source.page} (関連度: ${source.relevance_score})</div>
+                                <div class="source-text">${source.text}</div>
+                            `;
+                            itemDiv.appendChild(sourceBox);
+                        });
+                        
+                        itemsContainer.appendChild(itemDiv);
+                    });
+                } else {
+                    showError(data.detail || 'クエリ処理失敗');
+                }
+            } catch (error) {
+                showError('クエリエラー: ' + error.message);
+            } finally {
+                loading.classList.remove('show');
+            }
+        });
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+        
+        // Initialize
+        checkOllamaStatus();
+        setInterval(checkOllamaStatus, 5000); // Check every 5 seconds
+    </script>
+</body>
+</html>
