@@ -36,6 +36,26 @@ class QueryResponse(BaseModel):
     total_items: int
 
 
+class RetrievedChunk(BaseModel):
+    chunk_id: int
+    text: str
+    page_num: int
+    score: float
+
+
+class RetrievedItem(BaseModel):
+    item: str
+    retrieved: List[RetrievedChunk]
+
+
+class RetrieveResponse(BaseModel):
+    items: List[RetrievedItem]
+
+
+class GenerateRequest(BaseModel):
+    items: List[RetrievedItem]
+
+
 class StatusResponse(BaseModel):
     ollama_available: bool
     message: str
@@ -135,6 +155,57 @@ async def upload_pdf(file: UploadFile = File(...), chunk_tokens: int = Form(100)
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
+@app.post("/query/retrieve")
+async def retrieve_query(request: QueryRequest) -> RetrieveResponse:
+    """Retrieve relevant chunks for each item in the query."""
+    global current_rag_engine
+
+    if current_rag_engine is None or not current_rag_engine.chunks:
+        raise HTTPException(status_code=400, detail="No PDF uploaded. Please upload a PDF first.")
+
+    try:
+        raw_items = current_rag_engine.retrieve_items(request.query, top_k=request.top_k)
+        items = [
+            RetrievedItem(
+                item=entry["item"],
+                retrieved=[RetrievedChunk(**chunk) for chunk in entry["retrieved"]]
+            )
+            for entry in raw_items
+        ]
+        return RetrieveResponse(items=items)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retrieve failed: {str(e)}")
+
+
+@app.post("/query/generate")
+async def generate_query(request: GenerateRequest) -> QueryResponse:
+    """Generate answers from pre-retrieved chunks."""
+    global current_rag_engine
+
+    if current_rag_engine is None:
+        raise HTTPException(status_code=400, detail="No PDF uploaded. Please upload a PDF first.")
+
+    try:
+        items_with_retrieved = [
+            {"item": entry.item, "retrieved": [c.model_dump() for c in entry.retrieved]}
+            for entry in request.items
+        ]
+        result = current_rag_engine.generate_answers(items_with_retrieved)
+
+        items_results = []
+        for item_result in result["items"]:
+            sources = [SourceInfo(**source) for source in item_result["sources"]]
+            items_results.append(ItemResult(
+                item=item_result["item"],
+                answer=item_result["answer"],
+                sources=sources
+            ))
+
+        return QueryResponse(items=items_results, total_items=result["total_items"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generate failed: {str(e)}")
+
+
 @app.post("/query")
 async def query_pdf(request: QueryRequest) -> QueryResponse:
     """
@@ -152,7 +223,8 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=400, detail="No PDF uploaded. Please upload a PDF first.")
     
     try:
-        result = current_rag_engine.process_query(request.query, top_k=request.top_k)
+        items_with_retrieved = current_rag_engine.retrieve_items(request.query, top_k=request.top_k)
+        result = current_rag_engine.generate_answers(items_with_retrieved)
         
         # Convert to Pydantic models
         items_results = []
@@ -188,5 +260,31 @@ if os.path.exists(STATIC_DIR):
 
 
 if __name__ == "__main__":
+    import sys
+    import threading
+    import webbrowser
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # プロジェクトルートを sys.path に追加（backend パッケージのインポートを解決）
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    host = "localhost"
+    port = 8000
+    url = f"http://{host}:{port}"
+
+    print()
+    print("========================================")
+    print("  On-the-fly RAG System")
+    print("========================================")
+    print(f"  URL: {url}")
+    print("  Ctrl+C で停止")
+    print("========================================")
+    print()
+
+    def _open_browser():
+        import time
+        time.sleep(2)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port)

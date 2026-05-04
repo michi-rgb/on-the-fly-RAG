@@ -537,76 +537,97 @@
             
             const topK = parseInt(topKInput.value);
             
+            queryBtn.disabled = true;
             loading.classList.add('show');
             errorMessage.classList.remove('show');
-            
+            itemsContainer.innerHTML = '';
+            responseContent.style.display = 'block';
+
             try {
-                const response = await fetch('/query', {
+                // Step 1: Retrieve
+                const retrieveResponse = await fetch('/query/retrieve', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        top_k: topK
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, top_k: topK })
                 });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    itemsContainer.innerHTML = '';
-                    
-                    // Display each item with its answer and sources
-                    data.items.forEach((itemResult, itemIndex) => {
-                        const itemDiv = document.createElement('div');
-                        
-                        // Item header
-                        const itemHeader = document.createElement('h3');
-                        itemHeader.style.marginTop = itemIndex === 0 ? '0' : '30px';
-                        itemHeader.style.color = '#333';
-                        itemHeader.style.fontSize = '16px';
-                        itemHeader.style.paddingBottom = '10px';
-                        itemHeader.style.borderBottom = '2px solid #667eea';
-                        itemHeader.style.marginBottom = '15px';
-                        itemHeader.innerHTML = `📋 ${itemResult.item}`;
-                        itemDiv.appendChild(itemHeader);
-                        
-                        // Answer box
-                        const answerBox = document.createElement('div');
-                        answerBox.className = 'answer-box';
-                        answerBox.innerHTML = `<p>${itemResult.answer.replace(/\n/g, '<br>')}</p>`;
-                        itemDiv.appendChild(answerBox);
-                        
-                        // Sources header
-                        const sourcesHeader = document.createElement('h4');
-                        sourcesHeader.style.color = '#333';
-                        sourcesHeader.style.fontSize = '14px';
-                        sourcesHeader.style.marginTop = '15px';
-                        sourcesHeader.style.marginBottom = '10px';
-                        sourcesHeader.innerHTML = '📌 引用元';
-                        itemDiv.appendChild(sourcesHeader);
-                        
-                        // Sources
-                        itemResult.sources.forEach((source) => {
-                            const sourceBox = document.createElement('div');
-                            sourceBox.className = 'source-box';
-                            sourceBox.innerHTML = `
-                                <div class="source-header">ページ ${source.page} (関連度: ${source.relevance_score})</div>
-                                <div class="source-text">${source.text}</div>
-                            `;
-                            itemDiv.appendChild(sourceBox);
-                        });
-                        
-                        itemsContainer.appendChild(itemDiv);
-                    });
-                } else {
-                    showError(data.detail || 'クエリ処理失敗');
+                if (!retrieveResponse.ok) {
+                    const err = await retrieveResponse.json();
+                    showError(err.detail || 'Retrieve失敗');
+                    return;
                 }
+                const retrieveData = await retrieveResponse.json();
+                loading.classList.remove('show');
+
+                // Map item name → DOM elements for later update
+                const answerBoxMap = {};
+
+                retrieveData.items.forEach((itemResult, itemIndex) => {
+                    const itemDiv = document.createElement('div');
+
+                    const itemHeader = document.createElement('h3');
+                    itemHeader.style.marginTop = itemIndex === 0 ? '0' : '30px';
+                    itemHeader.style.color = '#333';
+                    itemHeader.style.fontSize = '16px';
+                    itemHeader.style.paddingBottom = '10px';
+                    itemHeader.style.borderBottom = '2px solid #667eea';
+                    itemHeader.style.marginBottom = '15px';
+                    itemHeader.innerHTML = `📋 ${itemResult.item}`;
+                    itemDiv.appendChild(itemHeader);
+
+                    // Placeholder for answer (will be filled after generate)
+                    const answerBox = document.createElement('div');
+                    answerBox.className = 'answer-box';
+                    answerBox.innerHTML = '<p><span class="spinner" style="display:inline-block;width:14px;height:14px;border-width:2px;margin-right:6px;vertical-align:middle;"></span>回答を生成中...</p>';
+                    itemDiv.appendChild(answerBox);
+                    answerBoxMap[itemResult.item] = answerBox;
+
+                    // Sources header
+                    const sourcesHeader = document.createElement('h4');
+                    sourcesHeader.style.color = '#333';
+                    sourcesHeader.style.fontSize = '14px';
+                    sourcesHeader.style.marginTop = '15px';
+                    sourcesHeader.style.marginBottom = '10px';
+                    sourcesHeader.innerHTML = '📌 引用元';
+                    itemDiv.appendChild(sourcesHeader);
+
+                    itemResult.retrieved.forEach((chunk) => {
+                        const sourceBox = document.createElement('div');
+                        sourceBox.className = 'source-box';
+                        sourceBox.innerHTML = `
+                            <div class="source-header">ページ ${chunk.page_num} (スコア: ${chunk.score.toFixed(3)})</div>
+                            <div class="source-text">${chunk.text}</div>
+                        `;
+                        itemDiv.appendChild(sourceBox);
+                    });
+
+                    itemsContainer.appendChild(itemDiv);
+                });
+
+                // Step 2: Generate
+                const generateResponse = await fetch('/query/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: retrieveData.items })
+                });
+                if (!generateResponse.ok) {
+                    const err = await generateResponse.json();
+                    showError(err.detail || '回答生成失敗');
+                    return;
+                }
+                const generateData = await generateResponse.json();
+
+                generateData.items.forEach((itemResult) => {
+                    const answerBox = answerBoxMap[itemResult.item];
+                    if (answerBox) {
+                        answerBox.innerHTML = `<p>${itemResult.answer.replace(/\n/g, '<br>')}</p>`;
+                    }
+                });
+
             } catch (error) {
-                showError('クエリエラー: ' + error.message);
+                showError('エラー: ' + error.message);
             } finally {
                 loading.classList.remove('show');
+                queryBtn.disabled = false;
             }
         });
         

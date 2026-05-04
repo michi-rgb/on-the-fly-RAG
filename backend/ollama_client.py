@@ -108,7 +108,8 @@ class OllamaClient:
                 json={
                     "model": model,
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "think": False
                 },
                 timeout=600
             )

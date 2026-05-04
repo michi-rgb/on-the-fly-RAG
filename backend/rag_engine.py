@@ -223,50 +223,25 @@ class RAGEngine:
             "sources": sources
         }
     
-    def process_query(self, query: str, top_k: int = 3) -> Dict[str, Any]:
-        """
-        End-to-end query processing with multi-item support.
-        
-        Args:
-            query: User query (may contain multiple items with bullet points)
-            top_k: Number of chunks to retrieve per item
-            
-        Returns:
-            Dictionary with items list containing answers and sources for each item
-        """
-        # Extract items from query
+    def retrieve_items(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """Extract items from query and retrieve chunks for each item."""
         items = self._extract_items_from_query(query)
-        
-        # Process each item separately
+        valid_items = [item for item in items if len(item.strip()) >= 2] or [query]
+        return [
+            {"item": item.strip(), "retrieved": self.retrieve(item, top_k=top_k)}
+            for item in valid_items
+        ]
+
+    def generate_answers(self, items_with_retrieved: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate answers for pre-retrieved items."""
         results_items = []
-        
-        for item in items:
-            # Skip if item is too short or generic
-            if len(item.strip()) < 2:
-                continue
-            
-            # Retrieve relevant chunks for this item
-            retrieved = self.retrieve(item, top_k=top_k)
-            
-            # Generate answer for this item
-            answer_data = self.generate_answer(item, retrieved)
-            
+        for entry in items_with_retrieved:
+            answer_data = self.generate_answer(entry["item"], entry["retrieved"])
             results_items.append({
-                "item": item.strip(),
+                "item": entry["item"],
                 "answer": answer_data["answer"],
                 "sources": answer_data["sources"]
             })
-        
-        # If no items were extracted or processed, treat as single query
-        if not results_items:
-            retrieved = self.retrieve(query, top_k=top_k)
-            answer_data = self.generate_answer(query, retrieved)
-            results_items.append({
-                "item": query.strip(),
-                "answer": answer_data["answer"],
-                "sources": answer_data["sources"]
-            })
-        
         return {
             "items": results_items,
             "total_items": len(results_items)
